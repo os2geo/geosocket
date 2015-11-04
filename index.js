@@ -339,6 +339,7 @@ sio.sockets.on('connection', function (socket) {
         socket.emit('authenticated', { token: socket.token, profile: socket.decoded_token });
 
     }
+    socket.emit('rune');
     console.log('connection');
     //console.log(socket.decoded_token.email, 'connected');
     socket.on('queue', function (data) {
