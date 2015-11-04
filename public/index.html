@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Socket.io with JWTs</title>
+</head>
+
+<body>
+    <form id="login">
+        <input type="text" id="username" value="john" />
+        <input type="password" id="password" value="aaa" />
+        <input type="submit" value="login">
+    </form>
+
+    <div>
+        <button id="ping">Send Socket.io Ping</button>
+    </div>
+
+    <script src="//code.jquery.com/jquery-1.10.1.min.js"></script>
+    <script src="/socket.io/socket.io.js"></script>
+
+    <script>
+        var token, socket;
+
+        function blobToImage(imageData) {
+            if (Blob && 'undefined' != typeof URL) {
+                var blob = new Blob([imageData], {
+                    type: 'image/png'
+                });
+                return URL.createObjectURL(blob);
+            } else if (imageData.base64) {
+                return 'data:image/png;base64,' + imageData.data;
+            } else {
+                return 'about:blank';
+            }
+        }
+
+        function connect() {
+            socket = io.connect(token ? ('?token=' + token) : '', {
+                'forceNew': true
+            });
+
+            socket.on('organization', function (data) {
+                var s = blobToImage(data.l);
+                console.log(s);
+                console.log(data);
+            }).on('time', function (data) {
+                console.log('- broadcast: ' + data);
+            }).on('authenticated', function () {
+                console.log('- authenticated');
+            }).on('disconnect', function () {
+                console.log('- disconnected');
+            });
+        }
+
+        connect(); //connect now, it will drop
+
+        $('#ping').on('click', function () {
+            console.log('- ping');
+            socket.emit('organizations', {
+                seq: 0
+            });
+        });
+
+        $('#login').submit(function (e) {
+            e.preventDefault();
+            var username = $('#username').val();
+            var password = $('#password').val();
+            $.ajax({
+                type: 'GET',
+                url: '/login/' + username + '/' + password
+            }).done(function (result) {
+                token = result.token;
+                connect();
+            });
+        });
+    </script>
+</body>
+
+</html>
