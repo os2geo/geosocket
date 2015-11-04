@@ -223,7 +223,7 @@ function createEmitData(db, id, emitHidden) {
     });
 }
 function emit(name, db, id, seq, socket, emitHidden) {
-    console.log('emit', name);
+    //console.log('emit', name);
     createEmitData(db, id, emitHidden).then(function (data) {
         data.s = seq
         socket.emit(name, data);
@@ -232,7 +232,7 @@ function emit(name, db, id, seq, socket, emitHidden) {
     });
 }
 function emitDatabase(name, db, id, seq, socket) {
-    console.log('emit', name, id);
+    //console.log('emit', name, id);
     return getDoc(db, id).then(function (doc) {
         doc.s = seq;
         socket.emit(name, doc);
@@ -335,12 +335,10 @@ var testExpire = function (socket) {
 
 sio.sockets.on('connection', function (socket) {
     if (socket.hasOwnProperty('decoded_token')) {
-        console.log('authenticated', socket.decoded_token);
+        //console.log('authenticated', socket.decoded_token);
         socket.emit('authenticated', { token: socket.token, profile: socket.decoded_token });
 
     }
-    socket.emit('rune');
-    console.log('connection');
     //console.log(socket.decoded_token.email, 'connected');
     socket.on('queue', function (data) {
         testExpire(socket);
@@ -403,7 +401,6 @@ sio.sockets.on('connection', function (socket) {
         });
     });
     socket.on('organization-all', function (data) {
-        console.log('on organization-all');
         testExpire(socket);
         var options = {
             name: 'organization',
