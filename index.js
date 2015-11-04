@@ -402,6 +402,7 @@ sio.sockets.on('connection', function (socket) {
         });
     });
     socket.on('organization-all', function (data) {
+        console.log('on organization-all');
         testExpire(socket);
         var options = {
             name: 'organization',
