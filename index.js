@@ -3,7 +3,7 @@ var dbname = 'app-d2121ee08caf832b73a160f9ea022ad9';
 var express = require('express');
 var http = require('http');
 var config = require('./config.json');
-
+var gm = require('gm');
 var socketIo = require('socket.io');
 var socketio_jwt = require('socketio-jwt');
 
@@ -268,7 +268,7 @@ function emitDatabaseAll(name, dbname, socket, result) {
                 d: true
             });
         } else {
-            emitDatabase(name, db, '_design/schema', seq, socket, true);
+            emitDatabase(name, db, '_design/schema', seq, socket);
         }
     }
     if (changes.hasOwnProperty('_design/straks')) {
@@ -278,7 +278,7 @@ function emitDatabaseAll(name, dbname, socket, result) {
                 d: true
             });
         } else {
-            emitDatabase(name, db, '_design/straks', seq, socket, true);
+            emitDatabase(name, db, '_design/straks', seq, socket);
         }
     }
     for (var id in changes) {
@@ -289,7 +289,7 @@ function emitDatabaseAll(name, dbname, socket, result) {
                     d: true
                 });
             } else {
-                emitDatabase(name, db, id, seq, socket, true);
+                emitDatabase(name, db, id, seq, socket);
             }
         }
     }
@@ -323,6 +323,23 @@ function getAll(socket, options) {
         return result;
     });
 };
+function thumbnail(name, attachment) {
+    return new Promise(function (resolve, reject) {
+        var source = name;
+        if (attachment.content_type === 'image/jpeg') {
+            source = source + '.jpg';
+        } else if (attachment.content_type === 'image/png') {
+            source = source + '.png';
+        }
+        gm(attachment.data, source).resize(100, 100).toBuffer('JPG', function (err, buffer) {
+            if (err) {
+                reject(err);
+            } else {
+                resolve({ name: 'tn_' + name, data: buffer, content_type: 'image/jpeg' });
+            }
+        });
+    });
+}
 var testExpire = function (socket) {
     if (socket.hasOwnProperty('decoded_token')) {
         console.log(Date.now() / 1000, socket.decoded_token);
@@ -342,7 +359,40 @@ sio.sockets.on('connection', function (socket) {
     //console.log(socket.decoded_token.email, 'connected');
     socket.on('queue', function (data) {
         testExpire(socket);
-        console.log(data);
+        var dbname = 'db-' + data.db;
+        var db = nano.db.use(dbname);
+        var doc = {};
+        var attachments = [];
+        var thumbnails = [];
+        for (var key in data.doc) {
+            if (key === '_attachments') {
+
+                for (var name in data.doc._attachments) {
+                    var attachment = data.doc._attachments[name];
+                    attachments.push({ name: name, data: attachment.data, content_type: attachment.content_type });
+                    thumbnails.push(thumbnail(name, attachment));
+                }
+
+            } else {
+                doc[key] = data.doc[key];
+            }
+        }
+        Promise.all(thumbnails).then(function (res) {
+            for (var i = 0; i < res.length; i++) {
+                attachments.push(res[i]);
+            }
+            db.multipart.insert(doc, attachments, data._id, function (err, body) {
+                if (err) {
+                    console.log(err);
+                } else {
+                    //console.log(body);
+
+                    sio.sockets.emit('check', dbname);
+                }
+                socket.emit('queue', data._id);
+            });
+        });
+
     });
     socket.on('authenticate', function (data) {
         if (data.hasOwnProperty('t')) {
@@ -420,11 +470,13 @@ sio.sockets.on('connection', function (socket) {
             name: data.d,
             db: data.d,
             changes: {
-                since: data.s
+                since: data.s,
+                include_docs: true
             }
         };
         getAll(this, options).then(function (result) {
-            emitDatabaseAll(options.name, options.db, socket, result);
+            //emitDatabaseAll(options.name, options.db, socket, result);
+            socket.emit(options.name, result);
         });
     });
     socket.on('configuration-rev', function (data) {
