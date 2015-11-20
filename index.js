@@ -207,7 +207,8 @@ function createEmitData(db, id, emitHidden) {
                     '_id': doc._id,
                     r: doc._rev,
                     n: doc.name,
-                    h: doc.hidden
+                    h: doc.hidden,
+                    b: doc.description
                 }
                 if (doc.hasOwnProperty('_attachments') && doc._attachments.hasOwnProperty('logo')) {
                     data.t = doc._attachments.logo.content_type;
