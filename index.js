@@ -517,12 +517,13 @@ sio.sockets.on('connection', function (socket) {
         if (data.i && data.i !== '') {
             headDoc(db, data.i).then(function (etag) {
                 if (etag !== data.r) {
-                    return getDoc(db, data.i, { attachments: true });
+                    //return getDoc(db, data.i, { attachments: true });
+                    return createEmitData(db, data.i, true);
                 }
                 return null;
             }).then(function (doc) {
                 if (doc) {
-                    if (doc.hasOwnProperty('_attachments')) {
+                    /*if (doc.hasOwnProperty('_attachments')) {
                         for (var key in doc._attachments) {
                             var attachment = doc._attachments[key];
                             if (attachment.content_type === 'application/json') {
@@ -532,11 +533,11 @@ sio.sockets.on('connection', function (socket) {
                                 doc._attachments[key].data = new Buffer(doc._attachments[key].data, 'base64');
                             }
                         }
-                    }
+                    }*/
                     socket.emit('configuration-list-' + data.o + '/' + data.i, doc);
                 }
             }).catch(function (err) {
-                socket.emit('configuration-list-' + data.o + '/' + data.i, { '_id': data.i, 'deleted': true });
+                socket.emit('configuration-list-' + data.o + '/' + data.i, { '_id': data.i, 'd': true });
             });
         }
     });
