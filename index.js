@@ -168,7 +168,17 @@ function getDoc(db, id, options) {
     return new Promise(function (resolve, reject) {
         var opt = options || {};
         db.get(id, opt, function (err, body) {
-
+            if (err) {
+                reject(err);
+            } else {
+                resolve(body);
+            }
+        });
+    });
+}
+function removeDoc(db, id, rev) {
+    return new Promise(function (resolve, reject) {
+        db.destroy(id, rev, function (err, body) {
             if (err) {
                 reject(err);
             } else {
@@ -359,41 +369,71 @@ sio.sockets.on('connection', function (socket) {
     }
     //console.log(socket.decoded_token.email, 'connected');
     socket.on('queue', function (data) {
+        console.log('queue',data);
         testExpire(socket);
         var dbname = 'db-' + data.db;
         var db = nano.db.use(dbname);
-        var doc = {};
-        var attachments = [];
-        var thumbnails = [];
-        for (var key in data.doc) {
-            if (key === '_attachments') {
-
-                for (var name in data.doc._attachments) {
-                    var attachment = data.doc._attachments[name];
-                    attachments.push({ name: name, data: attachment.data, content_type: attachment.content_type });
-                    thumbnails.push(thumbnail(name, attachment));
-                }
-
-            } else {
-                doc[key] = data.doc[key];
-            }
-        }
-        Promise.all(thumbnails).then(function (res) {
-            for (var i = 0; i < res.length; i++) {
-                attachments.push(res[i]);
-            }
-            db.multipart.insert(doc, attachments, data._id, function (err, body) {
-                if (err) {
-                    console.log(err);
-                } else {
-                    //console.log(body);
-
-                    sio.sockets.emit('check', dbname);
-                }
+        if (data.d) {
+            headDoc(db, data._id).then(function (etag) {
+                return removeDoc(db, data._id, etag);
+            }).then(function (doc) {
                 socket.emit('queue', data._id);
-            });
-        });
+                sio.to(dbname).emit(dbname + '-check', {});
+            }).catch(function (err) {
+                console.log(err);
+            })
+        } else {
+            var doc = {};
+            var attachments = [];
+            var thumbnails = [];
+            for (var key in data.doc) {
+                if (key === '_attachments') {
+                    for (var name in data.doc._attachments) {
+                        var attachment = data.doc._attachments[name];
+                        if (attachment.hasOwnProperty('data')) {
+                            attachments.push({ name: name, data: attachment.data, content_type: attachment.content_type });
+                            thumbnails.push(thumbnail(name, attachment));
+                        }
+                    }
 
+                } else {
+                    doc[key] = data.doc[key];
+                }
+            }
+            Promise.all(thumbnails).then(function (res) {
+                for (var i = 0; i < res.length; i++) {
+                    attachments.push(res[i]);
+                }
+                var id = doc.hasOwnProperty('_id') ? doc._id : data._id;
+                console.log(id);
+                if (attachments.length > 0) {
+                    console.log('insert multipart');
+                    db.multipart.insert(doc, attachments, id, function (err, body) {
+                        if (err) {
+                            console.log(err);
+                        } else {
+                            //console.log(body);
+
+
+                            sio.to(dbname).emit(dbname + '-check', {});
+                        }
+                        socket.emit('queue', data._id);
+                    });
+                } else {
+                    console.log('insert');
+                    db.insert(data.doc, id, function (err, body) {
+                        if (err) {
+                            console.log(err);
+                        } else {
+                            //console.log(body);
+
+                            sio.to(dbname).emit(dbname + '-check', {});
+                        }
+                        socket.emit('queue', data._id);
+                    });
+                }
+            });
+        }
     });
     socket.on('authenticate', function (data) {
         if (data.hasOwnProperty('t')) {
@@ -430,6 +470,12 @@ sio.sockets.on('connection', function (socket) {
             });
         }
     });
+    socket.on('unauthenticate', function (data) {
+        if (socket.hasOwnProperty('token')) {
+            delete socket.token;
+        }
+        socket.emit('unauthenticated', 'logout');
+    });
     socket.on('thumbnail', function (data) {
         testExpire(socket);
         var db = nano.db.use(data.d);
@@ -437,6 +483,15 @@ sio.sockets.on('connection', function (socket) {
             socket.emit('thumbnail', { a: data, b: result });
         })
 
+    });
+    socket.on('join', function (data) {
+        testExpire(socket);
+        console.log('join', data);
+        for (var i = 0; i < data.length; i++) {
+            var dbname = data[i];
+            socket.join(dbname);
+            socket.emit(dbname + '-check', {});
+        }
     });
     socket.on('configuration-list-all', function (data) {
         testExpire(socket);
