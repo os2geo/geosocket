@@ -10,9 +10,18 @@ var uuid = require('uuid');
 var jwt = require('jsonwebtoken');
 var jwt_secret = config.secret;
 
-var nano = require('nano')({
+/*var nano = require('nano')({
     "url": config.url,
     "parseUrl": false
+});*/
+var nano = require('nano')({
+    url: 'http://' + config.couchdb.host + ':' + config.couchdb.port5984,
+    requestDefaults: {
+        auth: {
+            user: config.couchdb.user,
+            pass: config.couchdb.password
+        }
+    }
 });
 var emailTemplates = require('email-templates');
 var path = require('path');
@@ -483,7 +492,7 @@ sio.sockets.on('connection', function (socket) {
     });
     socket.on('forgot', function (email) {
         var db = require('nano')({
-            url: 'http://'+config.couchdb.host+':' + config.couchdb.port5986 + '/_users',
+            url: 'http://' + config.couchdb.host + ':' + config.couchdb.port5986 + '/_users',
             requestDefaults: {
                 auth: {
                     user: config.couchdb.user,
