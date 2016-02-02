@@ -494,6 +494,7 @@ sio.sockets.on('connection', function (socket) {
 
         db.get('org.couchdb.user:' + email, function (err, body) {
             if (err) {
+                console.log(err);
                 socket.emit('forgot', 'Brugeren findes ikke.');
             } else {
                 var code = uuid.v1();
