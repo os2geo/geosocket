@@ -483,7 +483,7 @@ sio.sockets.on('connection', function (socket) {
     });
     socket.on('forgot', function (email) {
         var db = require('nano')({
-            url: 'http://localhost:' + config.couchdb.port5986 + '/_users',
+            url: 'http://'+config.couchdb.host+':' + config.couchdb.port5986 + '/_users',
             requestDefaults: {
                 auth: {
                     user: config.couchdb.user,
