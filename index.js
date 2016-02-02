@@ -6,7 +6,7 @@ var config = require('./config.json');
 var gm = require('gm');
 var socketIo = require('socket.io');
 var socketio_jwt = require('socketio-jwt');
-
+var uuid = require('uuid');
 var jwt = require('jsonwebtoken');
 var jwt_secret = config.secret;
 
@@ -14,6 +14,11 @@ var nano = require('nano')({
     "url": config.url,
     "parseUrl": false
 });
+var emailTemplates = require('email-templates');
+var path = require('path');
+var templatesDir = path.join(__dirname, 'templates');
+var nodemailer = require('nodemailer');
+var transport = nodemailer.createTransport(config.transport);
 
 var app = express();
 
@@ -369,7 +374,7 @@ sio.sockets.on('connection', function (socket) {
     }
     //console.log(socket.decoded_token.email, 'connected');
     socket.on('queue', function (data) {
-        console.log('queue',data);
+        console.log('queue', data);
         testExpire(socket);
         var dbname = 'db-' + data.db;
         var db = nano.db.use(dbname);
@@ -475,6 +480,59 @@ sio.sockets.on('connection', function (socket) {
             delete socket.token;
         }
         socket.emit('unauthenticated', 'logout');
+    });
+    socket.on('forgot', function (email) {
+        var db = require('nano')({
+            url: 'http://localhost:' + config.couchdb.port5986 + '/_users',
+            requestDefaults: {
+                auth: {
+                    user: config.couchdb.user,
+                    pass: config.couchdb.password
+                }
+            }
+        });
+
+        db.get('org.couchdb.user:' + email, function (err, body) {
+            if (err) {
+                socket.emit('forgot', 'Brugeren findes ikke.');
+            } else {
+                var code = uuid.v1();
+                body.verification_code = code;
+                db.insert(body, body._id, function (err, body) {
+                    if (err) {
+                        socket.emit('forgot', err);
+                    } else {
+                        emailTemplates(templatesDir, function (err, template) {
+                            if (err) {
+                                socket.emit('forgot', err);
+                            } else {
+                                template('forgot', {
+                                    url: config.forgot.url + code
+                                }, function (err, html, text) {
+                                    if (err) {
+                                        socket.emit('forgot', err);
+                                    } else {
+                                        transport.sendMail({
+                                            from: config.forgot.from,
+                                            to: email,
+                                            subject: 'Nulstil password',
+                                            html: html,
+                                            text: text
+                                        }, function (err, responseStatus) {
+                                            if (err) {
+                                                socket.emit('forgot', err);
+                                            } else {
+                                                socket.emit('forgot', 'Der er sendt en mail til ' + email + '.');
+                                            }
+                                        });
+                                    }
+                                });
+                            }
+                        });
+                    }
+                });
+            }
+        });
     });
     socket.on('thumbnail', function (data) {
         testExpire(socket);
