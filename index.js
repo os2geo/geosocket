@@ -1,4 +1,4 @@
-//var dbname = 'app-d2121ee08caf832b73a160f9ea022ad9';
+var dbname = 'app-d2121ee08caf832b73a160f9ea022ad9';
 //var dbname = 'test1';
 var express = require('express');
 var http = require('http');
