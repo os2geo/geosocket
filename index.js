@@ -1,4 +1,4 @@
-var dbname = 'app-d2121ee08caf832b73a160f9ea022ad9';
+//var dbname = 'app-d2121ee08caf832b73a160f9ea022ad9';
 //var dbname = 'test1';
 var express = require('express');
 var http = require('http');
@@ -9,7 +9,61 @@ var socketio_jwt = require('socketio-jwt');
 var uuid = require('uuid');
 var jwt = require('jsonwebtoken');
 var jwt_secret = config.secret;
+var nodemailer = require('nodemailer');
+var transport = nodemailer.createTransport(config.transport);
+var valuepath = function (input, doc) {
+    var path = input.split('/'),
+        item = doc,
+        m,
+        key;
+    for (m = 1; m < path.length; m += 1) {
+        key = path[m];
+        if (item.hasOwnProperty(key)) {
+            item = item[key];
+        } else {
+            return null;
+        }
 
+    }
+    return item;
+};
+var testrules = function (rules, doc) {
+    var key,
+        rule;
+    for (key in rules) {
+        if (rules.hasOwnProperty(key)) {
+            rule = rules[key];
+            if (Object.prototype.toString.call(rule) === '[object Array]') {
+                if (rule.indexOf(valuepath(key, doc)) === -1) {
+                    return false;
+                }
+            } else if (rule !== valuepath(key, doc)) {
+                return false;
+            }
+        }
+    }
+    return true;
+};
+var sendmail = function (email, subject) {
+    return function (err, html, text) {
+        if (err) {
+            console.log(err);
+        } else {
+            console.log('sendmail: ' + email + ' ' + subject);
+            transport.sendMail({
+                from: config.transport.auth.user,
+                to: email,
+                subject: subject,
+                html: html,
+                text: text
+            }, function (err, responseStatus) {
+                if (err) {
+                    console.log(err);
+                }
+            });
+        }
+    };
+};
 /*var nano = require('nano')({
     "url": config.url,
     "parseUrl": false
@@ -23,11 +77,54 @@ var nano = require('nano')({
         }
     }
 });
+var db_admin = nano.db.use("admin");
 var emailTemplates = require('email-templates');
 var path = require('path');
-var templatesDir = path.join(__dirname, 'templates');
-var nodemailer = require('nodemailer');
-var transport = nodemailer.createTransport(config.transport);
+//var templatesDir = path.join(__dirname, 'templates');
+var templatesDir = "/mnt/gluster/emailtemplates";
+
+
+
+var work = function (emailoptions, doc, template) {
+    db_admin.view('database', 'emailtemplate', emailoptions, function (err, data) {
+        if (err) {
+            console.log("view");
+            console.log(err);
+        } else {
+            data.rows.forEach(function (row) {
+                var key, ok, item, email;
+                if (row.doc.users) {
+                    for (key in row.doc.users) {
+                        if (row.doc.users.hasOwnProperty(key)) {
+                            item = row.doc.users[key];
+                            ok = testrules(item.rules, doc);
+                            if (ok) {
+                                template(row.id, {
+                                    doc: doc
+                                }, sendmail(key, row.doc.name));
+                            }
+                        }
+                    }
+                }
+                if (row.doc.userfields) {
+                    for (key in row.doc.userfields) {
+                        if (row.doc.userfields.hasOwnProperty(key)) {
+                            email = valuepath(key, doc);
+                            item = row.doc.userfields[key];
+                            ok = testrules(item.rules, doc);
+                            if (ok && email) {
+                                template(row.id, {
+                                    doc: doc
+                                }, sendmail(email, row.doc.name));
+                            }
+                        }
+                    }
+                }
+            });
+        }
+    });
+};
+
 
 var app = express();
 
@@ -374,145 +471,158 @@ var testExpire = function (socket) {
         }
     }
 }
+emailTemplates(templatesDir, function (err, template) {
+    if (err) {
+        console.log(err);
+    } else {
 
-sio.sockets.on('connection', function (socket) {
-    if (socket.hasOwnProperty('decoded_token')) {
-        //console.log('authenticated', socket.decoded_token);
-        socket.emit('authenticated', { token: socket.token, profile: socket.decoded_token });
 
-    }
-    //console.log(socket.decoded_token.email, 'connected');
-    socket.on('queue', function (data) {
-        console.log('queue', data);
-        testExpire(socket);
-        var dbname = 'db-' + data.db;
-        var db = nano.db.use(dbname);
-        if (data.d) {
-            headDoc(db, data._id).then(function (etag) {
-                return removeDoc(db, data._id, etag);
-            }).then(function (doc) {
-                socket.emit('queue', data._id);
-                sio.to(dbname).emit(dbname + '-check', {});
-            }).catch(function (err) {
-                console.log(err);
-            })
-        } else {
-            var doc = {};
-            var attachments = [];
-            var thumbnails = [];
-            for (var key in data.doc) {
-                if (key === '_attachments') {
-                    for (var name in data.doc._attachments) {
-                        var attachment = data.doc._attachments[name];
-                        if (attachment.hasOwnProperty('data')) {
-                            attachments.push({ name: name, data: attachment.data, content_type: attachment.content_type });
-                            thumbnails.push(thumbnail(name, attachment));
+        sio.sockets.on('connection', function (socket) {
+            if (socket.hasOwnProperty('decoded_token')) {
+                //console.log('authenticated', socket.decoded_token);
+                socket.emit('authenticated', { token: socket.token, profile: socket.decoded_token });
+
+            }
+            //console.log(socket.decoded_token.email, 'connected');
+            socket.on('queue', function (data) {
+                console.log('queue', data);
+                testExpire(socket);
+                var dbname = 'db-' + data.db;
+                var db = nano.db.use(dbname);
+                var emailoptions = {
+                    reduce: false,
+                    include_docs: true
+                };
+                if (data.d) {
+                    getDoc(db, data._id).then(function (doc) {
+                        emailoptions.key = [data.db, "delete"];
+                        work(emailoptions, doc, template);
+                        return removeDoc(db, data._id, doc._rev);
+                    }).then(function (doc) {
+                        socket.emit('queue', data._id);
+                        sio.to(dbname).emit(dbname + '-check', {});
+                    }).catch(function (err) {
+                        console.log(err);
+                    })
+                } else {
+                    var doc = {};
+                    var attachments = [];
+                    var thumbnails = [];
+                    for (var key in data.doc) {
+                        if (key === '_attachments') {
+                            for (var name in data.doc._attachments) {
+                                var attachment = data.doc._attachments[name];
+                                if (attachment.hasOwnProperty('data')) {
+                                    attachments.push({ name: name, data: attachment.data, content_type: attachment.content_type });
+                                    thumbnails.push(thumbnail(name, attachment));
+                                }
+                            }
+
+                        } else {
+                            doc[key] = data.doc[key];
                         }
                     }
-
-                } else {
-                    doc[key] = data.doc[key];
-                }
-            }
-            Promise.all(thumbnails).then(function (res) {
-                for (var i = 0; i < res.length; i++) {
-                    attachments.push(res[i]);
-                }
-                var id = doc.hasOwnProperty('_id') ? doc._id : data._id;
-                console.log(id);
-                if (attachments.length > 0) {
-                    console.log('insert multipart');
-                    db.multipart.insert(doc, attachments, id, function (err, body) {
-                        if (err) {
-                            console.log(err);
+                    Promise.all(thumbnails).then(function (res) {
+                        return new Promise(function (resolve, reject) {
+                            for (var i = 0; i < res.length; i++) {
+                                attachments.push(res[i]);
+                            }
+                            var id = doc.hasOwnProperty('_id') ? doc._id : data._id;
+                            console.log(id);
+                            if (attachments.length > 0) {
+                                console.log('insert multipart');
+                                db.multipart.insert(doc, attachments, id, function (err, body) {
+                                    resolve({ err: err, body: body });
+                                });
+                            } else {
+                                console.log('insert');
+                                db.insert(data.doc, id, function (err, body) {
+                                    resolve({ err: err, body: body });
+                                });
+                            }
+                        });
+                    }).then(function (res) {
+                        if (res.err) {
+                            console.log(res.err);
                         } else {
-                            //console.log(body);
-
-
                             sio.to(dbname).emit(dbname + '-check', {});
                         }
                         socket.emit('queue', data._id);
+                        getDoc(db, data._id).then(function (doc) {
+                            var rev = doc._rev.split('-');
+                            if (rev[0] === '1') {
+                                emailoptions.key = [data.db, "create"];
+                                console.log('created: ' + doc._id);
+                            } else {
+                                emailoptions.key = [data.db, "update"];
+                                console.log('updated: ' + doc._id);
+                            }
+                            work(emailoptions, doc, template);
+
+                        });
                     });
-                } else {
-                    console.log('insert');
-                    db.insert(data.doc, id, function (err, body) {
+                }
+            });
+            socket.on('authenticate', function (data) {
+                if (data.hasOwnProperty('t')) {
+                    jwt.verify(data.t, jwt_secret, function (err, decoded) {
+
                         if (err) {
-                            console.log(err);
-                        } else {
-                            //console.log(body);
-
-                            sio.to(dbname).emit(dbname + '-check', {});
+                            socket.emit('unathenticated', err);
                         }
-                        socket.emit('queue', data._id);
+                        else {
+                            socket.emit('authenticated', {
+                                token: data.t,
+                                profile: decoded
+                            });
+                        }
+
+                    });
+                } else if (data.hasOwnProperty('n') && data.hasOwnProperty('p')) {
+                    nano.auth(data.n, data.p, function (err, body, headers) {
+                        if (err) {
+                            socket.emit('unathenticated', err);
+                        } else {
+                            var profile = {
+                                name: data.n
+                            };
+                            var token = jwt.sign(profile, jwt_secret, {
+                                expiresIn: 60 * 60 * 24
+                            });
+                            socket.emit('authenticated', {
+                                token: token,
+                                profile: profile
+                            });
+                            socket.token = token;
+                        }
                     });
                 }
             });
-        }
-    });
-    socket.on('authenticate', function (data) {
-        if (data.hasOwnProperty('t')) {
-            jwt.verify(data.t, jwt_secret, function (err, decoded) {
-
-                if (err) {
-                    socket.emit('unathenticated', err);
+            socket.on('unauthenticate', function (data) {
+                if (socket.hasOwnProperty('token')) {
+                    delete socket.token;
                 }
-                else {
-                    socket.emit('authenticated', {
-                        token: data.t,
-                        profile: decoded
-                    });
-                }
-
+                socket.emit('unauthenticated', 'logout');
             });
-        } else if (data.hasOwnProperty('n') && data.hasOwnProperty('p')) {
-            nano.auth(data.n, data.p, function (err, body, headers) {
-                if (err) {
-                    socket.emit('unathenticated', err);
-                } else {
-                    var profile = {
-                        name: data.n
-                    };
-                    var token = jwt.sign(profile, jwt_secret, {
-                        expiresIn: 60 * 60 * 24
-                    });
-                    socket.emit('authenticated', {
-                        token: token,
-                        profile: profile
-                    });
-                    socket.token = token;
-                }
-            });
-        }
-    });
-    socket.on('unauthenticate', function (data) {
-        if (socket.hasOwnProperty('token')) {
-            delete socket.token;
-        }
-        socket.emit('unauthenticated', 'logout');
-    });
-    socket.on('forgot', function (email) {
-        var db = require('nano')({
-            url: 'http://' + config.couchdb.host + ':' + config.couchdb.port5986 + '/_users',
-            requestDefaults: {
-                auth: {
-                    user: config.couchdb.user,
-                    pass: config.couchdb.password
-                }
-            }
-        });
+            socket.on('forgot', function (email) {
+                var db = require('nano')({
+                    url: 'http://' + config.couchdb.host + ':' + config.couchdb.port5986 + '/_users',
+                    requestDefaults: {
+                        auth: {
+                            user: config.couchdb.user,
+                            pass: config.couchdb.password
+                        }
+                    }
+                });
 
-        db.get('org.couchdb.user:' + email, function (err, body) {
-            if (err) {
-                console.log(err);
-                socket.emit('forgot', 'Brugeren findes ikke.');
-            } else {
-                var code = uuid.v1();
-                body.verification_code = code;
-                db.insert(body, body._id, function (err, body) {
+                db.get('org.couchdb.user:' + email, function (err, body) {
                     if (err) {
-                        socket.emit('forgot', err);
+                        console.log(err);
+                        socket.emit('forgot', 'Brugeren findes ikke.');
                     } else {
-                        emailTemplates(templatesDir, function (err, template) {
+                        var code = uuid.v1();
+                        body.verification_code = code;
+                        db.insert(body, body._id, function (err, body) {
                             if (err) {
                                 socket.emit('forgot', err);
                             } else {
@@ -541,131 +651,130 @@ sio.sockets.on('connection', function (socket) {
                         });
                     }
                 });
-            }
-        });
-    });
-    socket.on('thumbnail', function (data) {
-        testExpire(socket);
-        var db = nano.db.use(data.d);
-        getAttachment(db, data.i, 'tn_' + data.n).then(function (result) {
-            socket.emit('thumbnail', { a: data, b: result });
-        })
+            });
+            socket.on('thumbnail', function (data) {
+                testExpire(socket);
+                var db = nano.db.use(data.d);
+                getAttachment(db, data.i, 'tn_' + data.n).then(function (result) {
+                    socket.emit('thumbnail', { a: data, b: result });
+                })
 
-    });
-    socket.on('join', function (data) {
-        testExpire(socket);
-        console.log('join', data);
-        for (var i = 0; i < data.length; i++) {
-            var dbname = data[i];
-            socket.join(dbname);
-            socket.emit(dbname + '-check', {});
-        }
-    });
-    socket.on('configuration-list-all', function (data) {
-        testExpire(socket);
-        var options = {
-            name: 'configuration-list-' + data.i,
-            db: dbname + '-' + data.i,
-            changes: {
-                since: data.s
-            }
-        };
-        getAll(this, options).then(function (result) {
-            emitAll(options.name, options.db, socket, result);
-        });
-    });
-    socket.on('organization-all', function (data) {
-        testExpire(socket);
-        var options = {
-            name: 'organization',
-            db: dbname,
-            changes: {
-                since: data.s,
-                filter: 'config/config'
-            }
-        };
-        getAll(this, options).then(function (result) {
-            emitAll(options.name, options.db, socket, result);
-        });
-    });
-    socket.on('database-all', function (data) {
-        testExpire(socket);
-        var options = {
-            name: data.d,
-            db: data.d,
-            changes: {
-                since: data.s,
-                include_docs: true
-            }
-        };
-        getAll(this, options).then(function (result) {
-            //emitDatabaseAll(options.name, options.db, socket, result);
-            socket.emit(options.name, result);
-        });
-    });
-    socket.on('configuration-rev', function (data) {
-        testExpire(socket);
-        socket.join('configuration-' + data.i);
-        var db = nano.db.use(dbname);
-        if (data.i && data.i !== '') {
-            headDoc(db, data.i).then(function (etag) {
-                if (etag !== data.r) {
-                    return getDoc(db, data.i, { attachments: true });
+            });
+            socket.on('join', function (data) {
+                testExpire(socket);
+                console.log('join', data);
+                for (var i = 0; i < data.length; i++) {
+                    var dbname = data[i];
+                    socket.join(dbname);
+                    socket.emit(dbname + '-check', {});
                 }
-                return null;
-            }).then(function (doc) {
-                if (doc) {
-                    if (doc.hasOwnProperty('_attachments')) {
-                        for (var key in doc._attachments) {
-                            var attachment = doc._attachments[key];
-                            if (attachment.content_type === 'application/json') {
-                                var json = new Buffer(doc._attachments[key].data, 'base64').toString('utf8');
-                                doc._attachments[key].data = JSON.parse(json);
-                            } else {
-                                doc._attachments[key].data = new Buffer(doc._attachments[key].data, 'base64');
-                            }
-                        }
+            });
+            socket.on('configuration-list-all', function (data) {
+                testExpire(socket);
+                var options = {
+                    name: 'configuration-list-' + data.i,
+                    db: dbname + '-' + data.i,
+                    changes: {
+                        since: data.s
                     }
-                    socket.emit('configuration', doc);
-                }
-            }).catch(function (err) {
-                socket.emit('configuration', { '_id': data.i, 'deleted': true });
+                };
+                getAll(this, options).then(function (result) {
+                    emitAll(options.name, options.db, socket, result);
+                });
             });
-        }
-    });
-    socket.on('configuration-list-rev', function (data) {
-        testExpire(socket);
-        socket.join('configuration-list-' + data.o + '/' + data.i);
-        var db = nano.db.use(dbname + '-' + data.o);
-        if (data.i && data.i !== '') {
-            headDoc(db, data.i).then(function (etag) {
-                if (etag !== data.r) {
-                    //return getDoc(db, data.i, { attachments: true });
-                    return createEmitData(db, data.i, true);
-                }
-                return null;
-            }).then(function (doc) {
-                if (doc) {
-                    /*if (doc.hasOwnProperty('_attachments')) {
-                        for (var key in doc._attachments) {
-                            var attachment = doc._attachments[key];
-                            if (attachment.content_type === 'application/json') {
-                                var json = new Buffer(doc._attachments[key].data, 'base64').toString('utf8');
-                                doc._attachments[key].data = JSON.parse(json);
-                            } else {
-                                doc._attachments[key].data = new Buffer(doc._attachments[key].data, 'base64');
-                            }
+            socket.on('organization-all', function (data) {
+                testExpire(socket);
+                var options = {
+                    name: 'organization',
+                    db: dbname,
+                    changes: {
+                        since: data.s,
+                        filter: 'config/config'
+                    }
+                };
+                getAll(this, options).then(function (result) {
+                    emitAll(options.name, options.db, socket, result);
+                });
+            });
+            socket.on('database-all', function (data) {
+                testExpire(socket);
+                var options = {
+                    name: data.d,
+                    db: data.d,
+                    changes: {
+                        since: data.s,
+                        include_docs: true
+                    }
+                };
+                getAll(this, options).then(function (result) {
+                    //emitDatabaseAll(options.name, options.db, socket, result);
+                    socket.emit(options.name, result);
+                });
+            });
+            socket.on('configuration-rev', function (data) {
+                testExpire(socket);
+                socket.join('configuration-' + data.i);
+                var db = nano.db.use(dbname);
+                if (data.i && data.i !== '') {
+                    headDoc(db, data.i).then(function (etag) {
+                        if (etag !== data.r) {
+                            return getDoc(db, data.i, { attachments: true });
                         }
-                    }*/
-                    socket.emit('configuration-list-' + data.o + '/' + data.i, doc);
+                        return null;
+                    }).then(function (doc) {
+                        if (doc) {
+                            if (doc.hasOwnProperty('_attachments')) {
+                                for (var key in doc._attachments) {
+                                    var attachment = doc._attachments[key];
+                                    if (attachment.content_type === 'application/json') {
+                                        var json = new Buffer(doc._attachments[key].data, 'base64').toString('utf8');
+                                        doc._attachments[key].data = JSON.parse(json);
+                                    } else {
+                                        doc._attachments[key].data = new Buffer(doc._attachments[key].data, 'base64');
+                                    }
+                                }
+                            }
+                            socket.emit('configuration', doc);
+                        }
+                    }).catch(function (err) {
+                        socket.emit('configuration', { '_id': data.i, 'deleted': true });
+                    });
                 }
-            }).catch(function (err) {
-                socket.emit('configuration-list-' + data.o + '/' + data.i, { '_id': data.i, 'd': true });
             });
-        }
-    });
+            socket.on('configuration-list-rev', function (data) {
+                testExpire(socket);
+                socket.join('configuration-list-' + data.o + '/' + data.i);
+                var db = nano.db.use(dbname + '-' + data.o);
+                if (data.i && data.i !== '') {
+                    headDoc(db, data.i).then(function (etag) {
+                        if (etag !== data.r) {
+                            //return getDoc(db, data.i, { attachments: true });
+                            return createEmitData(db, data.i, true);
+                        }
+                        return null;
+                    }).then(function (doc) {
+                        if (doc) {
+                            /*if (doc.hasOwnProperty('_attachments')) {
+                                for (var key in doc._attachments) {
+                                    var attachment = doc._attachments[key];
+                                    if (attachment.content_type === 'application/json') {
+                                        var json = new Buffer(doc._attachments[key].data, 'base64').toString('utf8');
+                                        doc._attachments[key].data = JSON.parse(json);
+                                    } else {
+                                        doc._attachments[key].data = new Buffer(doc._attachments[key].data, 'base64');
+                                    }
+                                }
+                            }*/
+                            socket.emit('configuration-list-' + data.o + '/' + data.i, doc);
+                        }
+                    }).catch(function (err) {
+                        socket.emit('configuration-list-' + data.o + '/' + data.i, { '_id': data.i, 'd': true });
+                    });
+                }
+            });
+        });
+    }
 });
-
 server.listen(9000, function () {
     console.log('listening on http://localhost:9000');
 });
