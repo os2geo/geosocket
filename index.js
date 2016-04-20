@@ -561,6 +561,8 @@ emailTemplates(templatesDir, function (err, template) {
                             }
                             work(emailoptions, doc, template);
 
+                        }).catch(function (err) {
+                            console.log(err);
                         });
                     });
                 }
