@@ -80,7 +80,7 @@ var nano = require('nano')({
 var db_admin = nano.db.use("admin");
 var emailTemplates = require('email-templates');
 var path = require('path');
-//var templatesDir = path.join(__dirname, 'templates');
+//var templatesDir = path.join(__dirname, 'emailtemplates');
 var templatesDir = "/mnt/gluster/emailtemplates";
 
 
@@ -419,7 +419,9 @@ function emitDatabaseAll(name, dbname, socket, result) {
 function getAll(socket, options) {
     return Promise.resolve().then(function () {
         socket.join(options.name);
-
+        if (options.changes.since[0] === '[') {
+            options.changes.since = '0';
+        }
         return changes(options.db, options.changes);
     }).then(function (body) {
         var result = { seq: JSON.stringify(body.last_seq), changes: {} };
