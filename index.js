@@ -534,16 +534,19 @@ emailTemplates(templatesDir, function (err, template) {
                             if (attachments.length > 0) {
                                 console.log('insert multipart');
                                 db.multipart.insert(doc, attachments, id, function (err, body) {
+                                    console.log('after insert multipart');
                                     resolve({ err: err, body: body });
                                 });
                             } else {
                                 console.log('insert');
                                 db.insert(data.doc, id, function (err, body) {
+                                    console.log('after insert insert');
                                     resolve({ err: err, body: body });
                                 });
                             }
                         });
                     }).then(function (res) {
+                        console.log('after insert',res);
                         if (res.err) {
                             console.log(res.err);
                         } else {
