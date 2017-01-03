@@ -100,7 +100,8 @@ var work = function (emailoptions, doc, template) {
                             ok = testrules(item.rules, doc);
                             if (ok) {
                                 template(row.id, {
-                                    doc: doc
+                                    doc: doc,
+                                    env: config.env
                                 }, sendmail(key, row.doc.name));
                             }
                         }
@@ -114,7 +115,8 @@ var work = function (emailoptions, doc, template) {
                             ok = testrules(item.rules, doc);
                             if (ok && email) {
                                 template(row.id, {
-                                    doc: doc
+                                    doc: doc,
+                                    env: config.env
                                 }, sendmail(email, row.doc.name));
                             }
                         }
