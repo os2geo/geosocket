@@ -486,13 +486,13 @@ emailTemplates(templatesDir, function (err, template) {
                 //console.log('authenticated', socket.decoded_token);
                 socket.emit('authenticated', { token: socket.token, profile: socket.decoded_token });
             }*/
-            sio.to('users').emit('users', sio.sockets.sockets.length);
+            sio.to('users').emit('users', {sockets:sio.sockets.sockets.length});
             socket.on('users', function () {
                 socket.join('users');
-                socket.emit('users', sio.sockets.sockets.length);
+                socket.emit('users', {sockets:sio.sockets.sockets.length});
             });
             socket.on('disconnect', function (data) {                
-                sio.to('users').emit('users', sio.sockets.sockets.length);
+                sio.to('users').emit('users', {sockets:sio.sockets.sockets.length});
             });
             //console.log(socket.decoded_token.email, 'connected');
             socket.on('queue', function (data) {
