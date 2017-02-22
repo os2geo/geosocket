@@ -475,33 +475,24 @@ var testExpire = function (socket) {
         }
     }
 }
-var users = { connected: 0, authenticated: 0 };
 emailTemplates(templatesDir, function (err, template) {
     if (err) {
         console.log(err);
     } else {
-
-
         sio.sockets.on('connection', function (socket) {
-            console.log('connection', socket);
-            users.connected++;
+            //console.log('connection', socket);
 
-            if (socket.hasOwnProperty('decoded_token')) {
+            /*if (socket.hasOwnProperty('decoded_token')) {
                 //console.log('authenticated', socket.decoded_token);
                 socket.emit('authenticated', { token: socket.token, profile: socket.decoded_token });
-                users.authenticated++;
-            }
-            sio.to('users').emit('users', users);
-            socket.on('users', function(){
+            }*/
+            sio.to('users').emit('users', sio.sockets.sockets.length);
+            socket.on('users', function () {
                 socket.join('users');
-                socket.emit('users',users);
+                socket.emit('users', sio.sockets.sockets.length);
             });
-            socket.on('disconnect', function (data) {
-                users.connected--;
-                if (this.hasOwnProperty('decoded_token')) {
-                    users.authenticated--;
-                }
-                sio.to('users').emit('users', users);
+            socket.on('disconnect', function (data) {                
+                sio.to('users').emit('users', sio.sockets.sockets.length);
             });
             //console.log(socket.decoded_token.email, 'connected');
             socket.on('queue', function (data) {
@@ -596,6 +587,8 @@ emailTemplates(templatesDir, function (err, template) {
                             socket.emit('unathenticated', err);
                         }
                         else {
+                            socket.decoded_token = decoded;
+                            socket.token = data.t;
                             socket.emit('authenticated', {
                                 token: data.t,
                                 profile: decoded
@@ -614,11 +607,13 @@ emailTemplates(templatesDir, function (err, template) {
                             var token = jwt.sign(profile, jwt_secret, {
                                 expiresIn: 60 * 60 * 24
                             });
+                            socket.decoded_token = profile;
+                            socket.token = token;
                             socket.emit('authenticated', {
                                 token: token,
                                 profile: profile
                             });
-                            socket.token = token;
+                            
                         }
                     });
                 }
@@ -626,6 +621,9 @@ emailTemplates(templatesDir, function (err, template) {
             socket.on('unauthenticate', function (data) {
                 if (socket.hasOwnProperty('token')) {
                     delete socket.token;
+                }
+                if (socket.hasOwnProperty('decoded_token')) {
+                    delete socket.decoded_token;
                 }
                 socket.emit('unauthenticated', 'logout');
             });
