@@ -475,6 +475,7 @@ var testExpire = function (socket) {
         }
     }
 }
+var users = { connected: 0, authenticated: 0 };
 emailTemplates(templatesDir, function (err, template) {
     if (err) {
         console.log(err);
@@ -482,11 +483,26 @@ emailTemplates(templatesDir, function (err, template) {
 
 
         sio.sockets.on('connection', function (socket) {
+            console.log('connection', socket);
+            users.connected++;
+
             if (socket.hasOwnProperty('decoded_token')) {
                 //console.log('authenticated', socket.decoded_token);
                 socket.emit('authenticated', { token: socket.token, profile: socket.decoded_token });
-
+                users.authenticated++;
             }
+            sio.to('users').emit('users', users);
+            socket.on('users', function(){
+                socket.join('users');
+                socket.emit('users',users);
+            });
+            socket.on('disconnect', function (data) {
+                users.connected--;
+                if (this.hasOwnProperty('decoded_token')) {
+                    users.authenticated--;
+                }
+                sio.to('users').emit('users', users);
+            });
             //console.log(socket.decoded_token.email, 'connected');
             socket.on('queue', function (data) {
                 console.log('queue', data);
@@ -548,7 +564,7 @@ emailTemplates(templatesDir, function (err, template) {
                             }
                         });
                     }).then(function (res) {
-                        console.log('after insert',res);
+                        console.log('after insert', res);
                         if (res.err) {
                             console.log(res.err);
                         } else {
