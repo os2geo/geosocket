@@ -64,7 +64,7 @@ var sendmail = function (email, subject) {
         }
     };
 };
-var nano = require('nano')({
+/*var nano = require('nano')({
     "url": config.url,
     "parseUrl": false,
     requestDefaults: {
@@ -73,8 +73,8 @@ var nano = require('nano')({
             pass: config.couchdb.password
         }
     }
-});
-/*var nano = require('nano')({
+});*/
+var nano = require('nano')({
     url: 'http://' + config.couchdb.host + ':' + config.couchdb.port5984,
     requestDefaults: {
         auth: {
@@ -82,12 +82,12 @@ var nano = require('nano')({
             pass: config.couchdb.password
         }
     }
-});*/
+});
 var db_admin = nano.db.use("admin");
 var emailTemplates = require('email-templates');
 var path = require('path');
-var templatesDir = path.join(__dirname, 'emailtemplates');
-//var templatesDir = "/mnt/gluster/emailtemplates";
+//var templatesDir = path.join(__dirname, 'emailtemplates');
+var templatesDir = "/mnt/gluster/emailtemplates";
 
 
 
