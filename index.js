@@ -64,12 +64,9 @@ var sendmail = function (email, subject) {
         }
     };
 };
-/*var nano = require('nano')({
-    "url": config.url,
-    "parseUrl": false
-});*/
 var nano = require('nano')({
-    url: 'http://' + config.couchdb.host + ':' + config.couchdb.port5984,
+    "url": config.url,
+    "parseUrl": false,
     requestDefaults: {
         auth: {
             user: config.couchdb.user,
@@ -77,11 +74,20 @@ var nano = require('nano')({
         }
     }
 });
+/*var nano = require('nano')({
+    url: 'http://' + config.couchdb.host + ':' + config.couchdb.port5984,
+    requestDefaults: {
+        auth: {
+            user: config.couchdb.user,
+            pass: config.couchdb.password
+        }
+    }
+});*/
 var db_admin = nano.db.use("admin");
 var emailTemplates = require('email-templates');
 var path = require('path');
-//var templatesDir = path.join(__dirname, 'emailtemplates');
-var templatesDir = "/mnt/gluster/emailtemplates";
+var templatesDir = path.join(__dirname, 'emailtemplates');
+//var templatesDir = "/mnt/gluster/emailtemplates";
 
 
 
@@ -486,13 +492,16 @@ emailTemplates(templatesDir, function (err, template) {
                 //console.log('authenticated', socket.decoded_token);
                 socket.emit('authenticated', { token: socket.token, profile: socket.decoded_token });
             }*/
-            sio.to('users').emit('users', {sockets:sio.sockets.sockets.length});
+            var users = { sockets: sio.sockets.sockets.length };
+            console.log(users);
+            sio.to('users').emit('users', users);
             socket.on('users', function () {
                 socket.join('users');
-                socket.emit('users', {sockets:sio.sockets.sockets.length});
+                console.log('users',{ sockets: sio.sockets.sockets.length })
+                socket.emit('users', { sockets: sio.sockets.sockets.length });
             });
-            socket.on('disconnect', function (data) {                
-                sio.to('users').emit('users', {sockets:sio.sockets.sockets.length});
+            socket.on('disconnect', function (data) {
+                sio.to('users').emit('users', { sockets: sio.sockets.sockets.length });
             });
             //console.log(socket.decoded_token.email, 'connected');
             socket.on('queue', function (data) {
@@ -613,7 +622,7 @@ emailTemplates(templatesDir, function (err, template) {
                                 token: token,
                                 profile: profile
                             });
-                            
+
                         }
                     });
                 }
