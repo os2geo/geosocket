@@ -10,7 +10,7 @@
   "license": "ISC",
   "dependencies": {
     "body-parser": "1.14.1",
-    "ejs": "2.4.1",
+    "ejs": "3.0.1",
     "email-templates": "2.3.0",
     "express": "4.13.3",
     "gm": "1.21.1",
