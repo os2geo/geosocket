@@ -51,7 +51,7 @@ var sendmail = function (email, subject) {
         } else {
             console.log('sendmail: ' + email + ' ' + subject);
             transport.sendMail({
-                from: config.transport.auth.user,
+                from: config.forgot.from,
                 to: email,
                 subject: subject,
                 html: html,
